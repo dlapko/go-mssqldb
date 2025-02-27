@@ -293,14 +293,14 @@ func encodeDateTime(t time.Time) (res []byte) {
 	// days since Jan 1st 1900 (same TZ as t)
 	days := gregorianDays(t.Year(), t.YearDay()) - basedays
 	tm := 300*(t.Second()+t.Minute()*60+t.Hour()*60*60) + nanosToThreeHundredthsOfASecond(t.Nanosecond())
-	
+
 	// Handle day overflow when time calculation exceeds one day
 	// One day = 86400 seconds = 86400 * 300 three-hundredths = 25,920,000
 	if tm >= 300*86400 {
 		days++
 		tm = tm - 300*86400
 	}
-	
+
 	// minimum and maximum possible
 	mindays := gregorianDays(1753, 1) - basedays
 	maxdays := gregorianDays(9999, 365) - basedays
@@ -576,6 +576,21 @@ func readLongLenType(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata, encoding msd
 	panic("shoulnd't get here")
 }
 func writeLongLenType(w io.Writer, ti typeInfo, buf []byte, encoding msdsn.EncodeParameters) (err error) {
+	if buf == nil {
+		// According to the documentation, we MUST NOT specify the text pointer and timestamp when the value is NULL.
+		//
+		// https://learn.microsoft.com/openspecs/windows_protocols/ms-tds/3840ef93-3b10-4aca-9fd1-a210b8bb6d0c
+		//
+		// However, this approach fails with the error:
+		// "Expected the text length in data stream for bulk copy of text, ntext, or image data."
+		//
+		// But we can insert NULL successfully by setting the text pointer length to zero
+		// (without writing any additional bytes).
+		// Since there's no clear way to follow the documentation exactly, let's use this solution.
+		err = binary.Write(w, binary.LittleEndian, byte(0x00))
+		return
+	}
+
 	//textptr
 	err = binary.Write(w, binary.LittleEndian, byte(0x10))
 	if err != nil {
