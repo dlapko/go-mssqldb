@@ -111,6 +111,89 @@ func TestBulkcopyWithInvalidNullableType(t *testing.T) {
 	}
 }
 
+func TestBulkcopyColNameEscaping(t *testing.T) {
+	tableName := "#table_test"
+	columns := []string{
+		`test_[]{}?@!#$%^&*()_+-=~'\";:/.,<>|\ `,
+	}
+	values := []interface{}{
+		1,
+	}
+
+	pool, logger := open(t)
+	defer pool.Close()
+	defer logger.StopLogging()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	conn, err := pool.Conn(ctx)
+	if err != nil {
+		t.Fatal("failed to pull connection from pool", err)
+	}
+	defer conn.Close()
+
+	err = setupTableWithStrangeColNames(ctx, t, conn, tableName)
+	if err != nil {
+		t.Error("Setup table failed: ", err)
+		return
+	}
+
+	stmt, err := conn.PrepareContext(ctx, CopyIn(tableName, BulkOptions{}, columns...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(values...)
+	if err != nil {
+		t.Fatal("AddRow failed: ", err.Error())
+	}
+
+	result, err := stmt.Exec()
+	if err != nil {
+		t.Fatal("bulkcopy failed: ", err.Error())
+	}
+
+	insertedRowCount, _ := result.RowsAffected()
+	if insertedRowCount == 0 {
+		t.Fatal("0 row inserted!")
+	}
+
+	//data verification
+	q := TSQLQuoter{}
+	var escapedNames []string
+	for _, name := range columns {
+		escapedNames = append(escapedNames, q.ID(name))
+	}
+
+	rows, err := conn.QueryContext(ctx, "select "+strings.Join(escapedNames, ",")+" from "+tableName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		ptrs := make([]interface{}, len(escapedNames))
+		container := make([]interface{}, len(escapedNames))
+		for i := range ptrs {
+			ptrs[i] = &container[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			t.Fatal(err)
+		}
+		for i, c := range escapedNames {
+			if !compareValue(container[i], values[i]) {
+				t.Errorf("columns %s : expected: %T %v, got: %T %v\n",
+					c, values[i], values[i], container[i], container[i])
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Error(err)
+	}
+}
+
 func testBulkcopy(t *testing.T, guidConversion bool) {
 	// TDS level Bulk Insert is not supported on Azure SQL Server.
 	if dsn := makeConnStrSettingGuidConversion(t, guidConversion); strings.HasSuffix(strings.Split(dsn.Host, ":")[0], ".database.windows.net") {
@@ -465,6 +548,17 @@ func setupTable(ctx context.Context, t *testing.T, conn *sql.Conn, tableName str
 	[id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY];`
+	_, err = conn.ExecContext(ctx, tablesql)
+	if err != nil {
+		t.Fatal("tablesql failed:", err)
+	}
+	return
+}
+
+func setupTableWithStrangeColNames(ctx context.Context, t *testing.T, conn *sql.Conn, tableName string) (err error) {
+	tablesql := `CREATE TABLE ` + tableName + ` (
+	[test_[]]{}?@!#$%^&*()_+-=~'\";:/.,<>|\ ] [int] NULL
+);`
 	_, err = conn.ExecContext(ctx, tablesql)
 	if err != nil {
 		t.Fatal("tablesql failed:", err)
