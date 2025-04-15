@@ -1313,7 +1313,7 @@ func makeDecl(ti typeInfo) string {
 			panic("invalid size of DATETIMNTYPE")
 		}
 	case typeTimeN:
-		return "time"
+		return fmt.Sprintf("time(%d)", ti.Scale)
 	case typeDateTime2N:
 		return fmt.Sprintf("datetime2(%d)", ti.Scale)
 	case typeDateTimeOffsetN:
