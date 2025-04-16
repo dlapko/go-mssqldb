@@ -85,11 +85,15 @@ const (
 	MultiSubnetFailover    = "multisubnetfailover"
 	NoTraceID              = "notraceid"
 	GuidConversion         = "guid conversion"
+	RawSqlVariant          = "raw sql_variant"
 )
 
 type EncodeParameters struct {
 	// Properly convert GUIDs, using correct byte endianness
 	GuidConversion bool
+	// RawSqlVariant indicates that sql_variant values should be returned
+	// in their raw TDS byte representation.
+	RawSqlVariant bool
 }
 
 type Config struct {
@@ -547,6 +551,18 @@ func Parse(dsn string) (Config, error) {
 		p.Encoding.GuidConversion = false
 	}
 
+	rawSqlVariant, ok := params[RawSqlVariant]
+	if ok {
+		var err error
+		p.Encoding.RawSqlVariant, err = strconv.ParseBool(rawSqlVariant)
+		if err != nil {
+			f := "invalid raw variant '%s': %s"
+			return p, fmt.Errorf(f, rawSqlVariant, err.Error())
+		}
+	} else {
+		p.Encoding.RawSqlVariant = false
+	}
+
 	return p, nil
 }
 
@@ -610,6 +626,10 @@ func (p Config) URL() *url.URL {
 
 	if p.Encoding.GuidConversion {
 		q.Add(GuidConversion, strconv.FormatBool(p.Encoding.GuidConversion))
+	}
+
+	if p.Encoding.RawSqlVariant {
+		q.Add(RawSqlVariant, strconv.FormatBool(p.Encoding.RawSqlVariant))
 	}
 
 	if len(q) > 0 {
