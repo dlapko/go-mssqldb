@@ -30,3 +30,17 @@ func getTestConnector(t testing.TB, guidConversion bool) (*Connector, *testLogge
 	}
 	return connector, &tl
 }
+
+func openRawSqlVariant(t testing.TB) (*sql.DB, *testLogger) {
+	tl := testLogger{t: t}
+	SetLogger(&tl)
+
+	connectionString := makeConnStrRawSqlVariant(t).String()
+	connector, err := NewConnector(connectionString)
+	if err != nil {
+		t.Error("Open connection failed:", err.Error())
+		return nil, &tl
+	}
+	conn := sql.OpenDB(connector)
+	return conn, &tl
+}
