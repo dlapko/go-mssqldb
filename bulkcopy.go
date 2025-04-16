@@ -606,67 +606,11 @@ func (b *Bulk) makeParam(val DataValue, col columnStruct) (res param, err error)
 			return res, fmt.Errorf("unknown value for money: %T %#v", v, v)
 		}
 	case typeDecimal, typeDecimalN, typeNumeric, typeNumericN:
-		prec := col.ti.Prec
-		scale := col.ti.Scale
-		var dec decimal.Decimal
-		switch v := val.(type) {
-		case int:
-			dec = decimal.Int64ToDecimalScale(int64(v), 0)
-		case int8:
-			dec = decimal.Int64ToDecimalScale(int64(v), 0)
-		case int16:
-			dec = decimal.Int64ToDecimalScale(int64(v), 0)
-		case int32:
-			dec = decimal.Int64ToDecimalScale(int64(v), 0)
-		case int64:
-			dec = decimal.Int64ToDecimalScale(int64(v), 0)
-		case float32:
-			dec, err = decimal.Float64ToDecimalScale(float64(v), scale)
-		case float64:
-			dec, err = decimal.Float64ToDecimalScale(float64(v), scale)
-		case string:
-			dec, err = decimal.StringToDecimalScale(v, scale)
-		default:
-			return res, fmt.Errorf("unknown value for decimal: %T %#v", v, v)
-		}
-
+		buf, err := encodeDecimal(val, col.ti.Prec, col.ti.Scale)
 		if err != nil {
 			return res, err
 		}
-		dec.SetPrec(prec)
-
-		var length byte
-		switch {
-		case prec <= 9:
-			length = 4
-		case prec <= 19:
-			length = 8
-		case prec <= 28:
-			length = 12
-		default:
-			length = 16
-		}
-
-		buf := make([]byte, length+1)
-		// first byte length written by typeInfo.writer
-		res.ti.Size = int(length) + 1
-		// second byte sign
-		if !dec.IsPositive() {
-			buf[0] = 0
-		} else {
-			buf[0] = 1
-		}
-
-		ub := dec.UnscaledBytes()
-		l := len(ub)
-		if l > int(length) {
-			err = fmt.Errorf("decimal out of range: %s", dec)
-			return res, err
-		}
-		// reverse the bytes
-		for i, j := 1, l-1; j >= 0; i, j = i+1, j-1 {
-			buf[i] = ub[j]
-		}
+		res.ti.Size = len(buf)
 		res.buffer = buf
 	case typeBigVarBin, typeBigBinary, typeImage:
 		switch val := val.(type) {
