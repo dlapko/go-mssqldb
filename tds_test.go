@@ -392,6 +392,12 @@ func makeConnStrSettingGuidConversion(t testing.TB, guidConversion bool) *url.UR
 	return config.URL()
 }
 
+func makeConnStrRawSqlVariant(t testing.TB) *url.URL {
+	config := testConnParams(t)
+	config.Encoding.RawSqlVariant = true
+	return config.URL()
+}
+
 type testLogger struct {
 	t    testing.TB
 	mu   sync.Mutex

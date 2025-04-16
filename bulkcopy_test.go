@@ -194,6 +194,341 @@ func TestBulkcopyColNameEscaping(t *testing.T) {
 	}
 }
 
+func TestBulkcopySQLVariant(t *testing.T) {
+	tableName := "#table_test"
+
+	uid := []byte{0x6F, 0x96, 0x19, 0xFF, 0x8B, 0x86, 0xD0, 0x11, 0xB4, 0x2D, 0x00, 0xC0, 0x4F, 0xC9, 0x64, 0xFF}
+	location, _ := time.LoadLocation("America/Los_Angeles")
+	nullVariantTestValues := []NullSQLVariant{
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeGuid,
+				Value:    uid,
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeBit,
+				Value:    true,
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeInt1,
+				Value:    int64(1),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeInt2,
+				Value:    int64(1),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeInt4,
+				Value:    int64(1),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeInt8,
+				Value:    int64(1),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeDateTime,
+				Value:    time.Date(2010, 11, 12, 13, 14, 15, 120000000, time.UTC),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeDateTim4,
+				Value:    time.Date(2010, 11, 12, 13, 14, 0, 0, time.UTC),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeFlt4,
+				Value:    1234.56,
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeFlt8,
+				Value:    1234.56,
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeMoney4,
+				Value:    []byte("1234.5600"),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeMoney,
+				Value:    []byte("1234.5600"),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeDateN,
+				Value:    time.Date(2010, 11, 12, 0, 0, 0, 0, time.UTC),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeTimeN,
+				Scale:    1,
+				Value:    time.Date(1, 1, 1, 13, 14, 15, 100000000, time.UTC),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeDateTime2N,
+				Scale:    5,
+				Value:    time.Date(2010, 11, 12, 13, 14, 15, 123450000, time.UTC),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType: SQLVariantTypeDateTimeOffsetN,
+				Scale:    7,
+				Value:    time.Date(2010, 11, 12, 13, 14, 15, 123456700, location),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType:  SQLVariantTypeBigVarBin,
+				MaxLength: 8000,
+				Value:     []byte{1},
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType:  SQLVariantTypeBigBinary,
+				MaxLength: 1,
+				Value:     []byte{1},
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType:  SQLVariantTypeDecimalN,
+				Precision: 3,
+				Scale:     1,
+				Value:     []byte("10.2"),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType:  SQLVariantTypeNumericN,
+				Precision: 38,
+				Scale:     38,
+				Value:     []byte("0.12345678901234567890123456789012345678"),
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType:  SQLVariantTypeBigVarChar,
+				MaxLength: 8000,
+				Collation: SQLVariantCollation{
+					LcidAndFlags: 13632521,
+					SortId:       52,
+				},
+				Value: "a",
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType:  SQLVariantTypeBigChar,
+				MaxLength: 1,
+				Collation: SQLVariantCollation{
+					LcidAndFlags: 13632521,
+					SortId:       52,
+				},
+				Value: "a",
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType:  SQLVariantTypeNVarChar,
+				MaxLength: 8000,
+				Collation: SQLVariantCollation{
+					LcidAndFlags: 13632521,
+					SortId:       52,
+				},
+				Value: "a",
+			},
+			Valid: true,
+		},
+		{
+			SQLVariant: SQLVariant{
+				BaseType:  SQLVariantTypeNChar,
+				MaxLength: 2,
+				Collation: SQLVariantCollation{
+					LcidAndFlags: 13632521,
+					SortId:       52,
+				},
+				Value: "a",
+			},
+			Valid: true,
+		},
+		{
+			Valid: false,
+		},
+	}
+
+	variantTestValues := make([]SQLVariant, len(nullVariantTestValues))
+	for i := range nullVariantTestValues {
+		if nullVariantTestValues[i].Valid {
+			variantTestValues[i] = nullVariantTestValues[i].SQLVariant
+		} else {
+			variantTestValues[i] = SQLVariant{
+				BaseType: SQLVariantTypeBit,
+				Value:    true,
+			}
+		}
+	}
+
+	pool, logger := openRawSqlVariant(t)
+	defer pool.Close()
+	defer logger.StopLogging()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Now that session resetting is supported, the use of the per session
+	// temp table requires the use of a dedicated connection from the connection
+	// pool.
+	conn, err := pool.Conn(ctx)
+	if err != nil {
+		t.Fatal("failed to pull connection from pool", err)
+	}
+	defer conn.Close()
+
+	columns := []string{
+		"test_sql_variantn",
+		"test_sql_variant",
+	}
+	tablesql := `CREATE TABLE ` + tableName + ` (
+		[test_sql_variantn] [sql_variant] NULL,
+		[test_sql_variant] [sql_variant] NOT NULL
+	);`
+	_, err = conn.ExecContext(ctx, tablesql)
+	if err != nil {
+		t.Fatal("tablesql failed:", err)
+	}
+
+	t.Log("Preparing copy in statement")
+
+	stmt, err := conn.PrepareContext(ctx, CopyIn(tableName, BulkOptions{}, columns...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stmt.Close()
+
+	for i := range nullVariantTestValues {
+		_, err = stmt.Exec(nullVariantTestValues[i], variantTestValues[i])
+		if err != nil {
+			t.Error("AddRow failed: ", err.Error())
+			return
+		}
+	}
+
+	result, err := stmt.Exec()
+	if err != nil {
+		t.Fatal("bulkcopy failed: ", err.Error())
+	}
+
+	insertedRowCount, _ := result.RowsAffected()
+	if insertedRowCount == 0 {
+		t.Fatal("0 row inserted!")
+	}
+
+	//check that all rows are present
+	var rowCount int
+	err = conn.QueryRowContext(ctx, "select count(*) c from "+tableName).Scan(&rowCount)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rowCount != len(nullVariantTestValues) {
+		t.Errorf("unexpected row count %d", rowCount)
+	}
+
+	//data verification
+	rows, err := conn.QueryContext(ctx, "select "+strings.Join(columns, ",")+" from "+tableName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	for i := 0; rows.Next(); i++ {
+		var nullVariant NullSQLVariant
+		var variant SQLVariant
+
+		if err := rows.Scan(&nullVariant, &variant); err != nil {
+			t.Fatal(err)
+		}
+
+		if nullVariant.Valid != nullVariantTestValues[i].Valid {
+			t.Errorf("columns %s : expected valid: %t, got: %t\n", columns[0], nullVariantTestValues[i].Valid, nullVariant.Valid)
+		}
+		if compareSQLVariant(nullVariant.SQLVariant, nullVariantTestValues[i].SQLVariant) {
+			t.Errorf("columns %s : expected: %v, got: %v\n", columns[0], nullVariantTestValues[i].SQLVariant, nullVariant.SQLVariant)
+		}
+		if compareSQLVariant(variant, variantTestValues[i]) {
+			t.Errorf("columns %s : expected: %v, got: %v\n", columns[1], variantTestValues[i], variant)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Error(err)
+	}
+}
+
+func compareSQLVariant(a, b SQLVariant) bool {
+	if a.BaseType != b.BaseType {
+		return false
+	}
+	if a.Scale != b.Scale {
+		return false
+	}
+	if a.Precision != b.Precision {
+		return false
+	}
+	if a.MaxLength != b.MaxLength {
+		return false
+	}
+	if a.Collation != b.Collation {
+		return false
+	}
+	return !compareValue(a.Value, b.Value)
+}
+
 func testBulkcopy(t *testing.T, guidConversion bool) {
 	// TDS level Bulk Insert is not supported on Azure SQL Server.
 	if dsn := makeConnStr(t); strings.HasSuffix(strings.Split(dsn.Host, ":")[0], ".database.windows.net") {
@@ -292,6 +627,11 @@ func testBulkcopy(t *testing.T, guidConversion bool) {
 		{"test_imagen", nil, nil},
 		{"test_xml", "<root><child>value</child></root>", nil},
 		{"test_xmln", nil, nil},
+		{"test_sql_variant", SQLVariant{
+			BaseType: SQLVariantTypeInt1,
+			Value:    1,
+		}, int64(1)},
+		{"test_sql_variantn", nil, nil},
 	}
 
 	columns := make([]string, len(testValues))
@@ -549,6 +889,8 @@ func setupTable(ctx context.Context, t *testing.T, conn *sql.Conn, tableName str
 	[test_datetimen_midnight] [datetime] NULL,
 	[test_image] [image] NOT NULL,
 	[test_imagen] [image] NULL,
+	[test_sql_variant] [sql_variant] NOT NULL,
+	[test_sql_variantn] [sql_variant] NULL,
  CONSTRAINT [PK_` + tableName + `_id] PRIMARY KEY CLUSTERED
 (
 	[id] ASC

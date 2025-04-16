@@ -261,7 +261,12 @@ func writeVarLen(w io.Writer, ti *typeInfo, out bool, encoding msdsn.EncodeParam
 				return
 			}
 		}
-		ti.Writer = writeLongLenType
+
+		if ti.TypeId == typeVariant {
+			ti.Writer = writeVariantType
+		} else {
+			ti.Writer = writeLongLenType
+		}
 	default:
 		panic("Invalid type")
 	}
@@ -648,6 +653,10 @@ func writeCollation(w io.Writer, col cp.Collation) (err error) {
 // reads variant value
 // http://msdn.microsoft.com/en-us/library/dd303302.aspx
 func readVariantTypeWithEncoding(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata, encoding msdsn.EncodeParameters) interface{} {
+	if encoding.RawSqlVariant {
+		return readVariantTypeRaw(ti, r, c, encoding)
+	}
+
 	size := r.int32()
 	loc := encoding.GetTimezone()
 	if size == 0 {
@@ -736,6 +745,32 @@ func readVariantTypeWithEncoding(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata, 
 		badStreamPanicf("Invalid variant typeid")
 	}
 	panic("shoulnd't get here")
+}
+
+func readVariantTypeRaw(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata, encoding msdsn.EncodeParameters) interface{} {
+	size := r.int32()
+	if size == 0 {
+		return nil
+	}
+
+	buf := make([]byte, size)
+	r.ReadFull(buf)
+	return buf
+}
+
+// LONGLEN_TYPE, without textptr, timestamp
+// https://learn.microsoft.com/openspecs/windows_protocols/ms-tds/3f983fde-0509-485a-8c40-a9fa6679a828
+func writeVariantType(w io.Writer, ti typeInfo, buf []byte, encoding msdsn.EncodeParameters) (err error) {
+	if buf == nil {
+		err = binary.Write(w, binary.LittleEndian, uint32(0))
+		return
+	}
+	err = binary.Write(w, binary.LittleEndian, uint32(ti.Size))
+	if err != nil {
+		return
+	}
+	_, err = w.Write(buf)
+	return
 }
 
 // partially length prefixed stream
@@ -907,6 +942,72 @@ func readVarLen(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata, encoding msdsn.En
 	}
 }
 
+func encodeIntValue(value any, size int) ([]byte, error) {
+	var n int64
+	switch v := value.(type) {
+	case int:
+		n = int64(v)
+	case int8:
+		n = int64(v)
+	case int16:
+		n = int64(v)
+	case int32:
+		n = int64(v)
+	case int64:
+		n = v
+	case uint:
+		n = int64(v)
+	case uint8:
+		n = int64(v)
+	case uint16:
+		n = int64(v)
+	case uint32:
+		n = int64(v)
+	case uint64:
+		n = int64(v)
+	default:
+		return nil, fmt.Errorf("mssql: invalid type for int column: %T", value)
+	}
+
+	buf := make([]byte, size)
+	switch size {
+	case 1:
+		buf[0] = byte(n)
+	case 2:
+		binary.LittleEndian.PutUint16(buf, uint16(n))
+	case 4:
+		binary.LittleEndian.PutUint32(buf, uint32(n))
+	case 8:
+		binary.LittleEndian.PutUint64(buf, uint64(n))
+	default:
+		return nil, fmt.Errorf("mssql: invalid int size: %d", size)
+	}
+	return buf, nil
+}
+
+func encodeFloatValue(value any, size int) ([]byte, error) {
+	var n float64
+	switch v := value.(type) {
+	case float32:
+		n = float64(v)
+	case float64:
+		n = v
+	default:
+		return nil, fmt.Errorf("mssql: invalid type for float column: %T", value)
+	}
+
+	buf := make([]byte, size)
+	switch size {
+	case 4:
+		binary.LittleEndian.PutUint32(buf, math.Float32bits(float32(n)))
+	case 8:
+		binary.LittleEndian.PutUint64(buf, math.Float64bits(n))
+	default:
+		return nil, fmt.Errorf("mssql: invalid float size: %d", size)
+	}
+	return buf, nil
+}
+
 func decodeMoney(buf []byte) []byte {
 	money := int64(uint64(buf[4]) |
 		uint64(buf[5])<<8 |
@@ -919,9 +1020,40 @@ func decodeMoney(buf []byte) []byte {
 	return decimal.ScaleBytes(strconv.FormatInt(money, 10), 4)
 }
 
+func encodeMoney(val []byte) (buf []byte, err error) {
+	d, err := decimal.StringToDecimalScale(string(val), 4)
+	if err != nil {
+		return nil, err
+	}
+	bigInt := d.BigInt()
+	intValue := bigInt.Int64()
+
+	buf = make([]byte, 8)
+	// The 8-byte signed integer is represented in the following sequence:
+	// - One 4-byte integer that represents the more significant half.
+	// - One 4-byte integer that represents the less significant half.
+	//
+	// https://learn.microsoft.com/openspecs/windows_protocols/ms-tds/1266679d-cd6e-492a-b2b2-3a9ba004196d
+	binary.LittleEndian.PutUint32(buf[0:4], uint32(intValue>>32))
+	binary.LittleEndian.PutUint32(buf[4:8], uint32(intValue&0xFFFFFFFF))
+	return buf, nil
+}
+
 func decodeMoney4(buf []byte) []byte {
 	money := int32(binary.LittleEndian.Uint32(buf[0:4]))
 	return decimal.ScaleBytes(strconv.FormatInt(int64(money), 10), 4)
+}
+
+func encodeMoney4(val []byte) (buf []byte, err error) {
+	d, err := decimal.StringToDecimalScale(string(val), 4)
+	if err != nil {
+		return nil, err
+	}
+	bigInt := d.BigInt()
+	intValue := bigInt.Int64()
+	buf = make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf[0:4], uint32(intValue))
+	return buf, nil
 }
 
 func decodeGuid(buf []byte, encoding msdsn.EncodeParameters) []byte {
@@ -948,6 +1080,69 @@ func decodeDecimal(prec uint8, scale uint8, buf []byte) []byte {
 		buf = buf[4:]
 	}
 	return dec.Bytes()
+}
+
+func encodeDecimal(val any, prec uint8, scale uint8) (buf []byte, err error) {
+	var dec decimal.Decimal
+	switch v := val.(type) {
+	case int:
+		dec = decimal.Int64ToDecimalScale(int64(v), 0)
+	case int8:
+		dec = decimal.Int64ToDecimalScale(int64(v), 0)
+	case int16:
+		dec = decimal.Int64ToDecimalScale(int64(v), 0)
+	case int32:
+		dec = decimal.Int64ToDecimalScale(int64(v), 0)
+	case int64:
+		dec = decimal.Int64ToDecimalScale(int64(v), 0)
+	case float32:
+		dec, err = decimal.Float64ToDecimalScale(float64(v), scale)
+	case float64:
+		dec, err = decimal.Float64ToDecimalScale(float64(v), scale)
+	case string:
+		dec, err = decimal.StringToDecimalScale(v, scale)
+	case []byte:
+		dec, err = decimal.StringToDecimalScale(string(v), scale)
+	default:
+		return nil, fmt.Errorf("unknown value for decimal: %T %#v", v, v)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	dec.SetPrec(prec)
+
+	var length byte
+	switch {
+	case prec <= 9:
+		length = 4
+	case prec <= 19:
+		length = 8
+	case prec <= 28:
+		length = 12
+	default:
+		length = 16
+	}
+
+	buf = make([]byte, length+1)
+	// second byte sign
+	if !dec.IsPositive() {
+		buf[0] = 0
+	} else {
+		buf[0] = 1
+	}
+
+	ub := dec.UnscaledBytes()
+	l := len(ub)
+	if l > int(length) {
+		err = fmt.Errorf("decimal out of range: %s", dec)
+		return nil, err
+	}
+	// reverse the bytes
+	for i, j := 1, l-1; j >= 0; i, j = i+1, j-1 {
+		buf[i] = ub[j]
+	}
+	return buf, nil
 }
 
 // http://msdn.microsoft.com/en-us/library/ee780895.aspx
@@ -1342,6 +1537,8 @@ func makeDecl(ti typeInfo) string {
 			return fmt.Sprintf("%s.%s READONLY", ti.UdtInfo.SchemaName, ti.UdtInfo.TypeName)
 		}
 		return fmt.Sprintf("%s READONLY", ti.UdtInfo.TypeName)
+	case typeVariant:
+		return "sql_variant"
 	default:
 		panic(fmt.Sprintf("not implemented makeDecl for type %#x", ti.TypeId))
 	}

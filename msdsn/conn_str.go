@@ -86,6 +86,7 @@ const (
 	NoTraceID              = "notraceid"
 	GuidConversion         = "guid conversion"
 	Timezone               = "timezone"
+	RawSqlVariant          = "raw sql_variant"
 )
 
 type EncodeParameters struct {
@@ -93,6 +94,9 @@ type EncodeParameters struct {
 	GuidConversion bool
 	// Timezone is the timezone to use for encoding and decoding datetime values.
 	Timezone *time.Location
+	// RawSqlVariant indicates that sql_variant values should be returned
+	// in their raw TDS byte representation.
+	RawSqlVariant bool
 }
 
 func (e EncodeParameters) GetTimezone() *time.Location {
@@ -569,6 +573,18 @@ func Parse(dsn string) (Config, error) {
 		p.Encoding.GuidConversion = false
 	}
 
+	rawSqlVariant, ok := params[RawSqlVariant]
+	if ok {
+		var err error
+		p.Encoding.RawSqlVariant, err = strconv.ParseBool(rawSqlVariant)
+		if err != nil {
+			f := "invalid raw variant '%s': %s"
+			return p, fmt.Errorf(f, rawSqlVariant, err.Error())
+		}
+	} else {
+		p.Encoding.RawSqlVariant = false
+	}
+
 	return p, nil
 }
 
@@ -636,6 +652,10 @@ func (p Config) URL() *url.URL {
 
 	if tz := p.Encoding.Timezone; tz != nil && tz != time.UTC {
 		q.Add(Timezone, tz.String())
+	}
+
+	if p.Encoding.RawSqlVariant {
+		q.Add(RawSqlVariant, strconv.FormatBool(p.Encoding.RawSqlVariant))
 	}
 
 	if len(q) > 0 {
