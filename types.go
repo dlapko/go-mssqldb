@@ -950,6 +950,69 @@ func decodeDecimal(prec uint8, scale uint8, buf []byte) []byte {
 	return dec.Bytes()
 }
 
+func encodeDecimal(val any, prec uint8, scale uint8) (buf []byte, err error) {
+	var dec decimal.Decimal
+	switch v := val.(type) {
+	case int:
+		dec = decimal.Int64ToDecimalScale(int64(v), 0)
+	case int8:
+		dec = decimal.Int64ToDecimalScale(int64(v), 0)
+	case int16:
+		dec = decimal.Int64ToDecimalScale(int64(v), 0)
+	case int32:
+		dec = decimal.Int64ToDecimalScale(int64(v), 0)
+	case int64:
+		dec = decimal.Int64ToDecimalScale(int64(v), 0)
+	case float32:
+		dec, err = decimal.Float64ToDecimalScale(float64(v), scale)
+	case float64:
+		dec, err = decimal.Float64ToDecimalScale(float64(v), scale)
+	case string:
+		dec, err = decimal.StringToDecimalScale(v, scale)
+	case []byte:
+		dec, err = decimal.StringToDecimalScale(string(v), scale)
+	default:
+		return nil, fmt.Errorf("unknown value for decimal: %T %#v", v, v)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	dec.SetPrec(prec)
+
+	var length byte
+	switch {
+	case prec <= 9:
+		length = 4
+	case prec <= 19:
+		length = 8
+	case prec <= 28:
+		length = 12
+	default:
+		length = 16
+	}
+
+	buf = make([]byte, length+1)
+	// sign byte
+	if !dec.IsPositive() {
+		buf[0] = 0
+	} else {
+		buf[0] = 1
+	}
+
+	ub := dec.UnscaledBytes()
+	l := len(ub)
+	if l > int(length) {
+		err = fmt.Errorf("decimal out of range: %s", dec)
+		return nil, err
+	}
+	// reverse the bytes
+	for i, j := 1, l-1; j >= 0; i, j = i+1, j-1 {
+		buf[i] = ub[j]
+	}
+	return buf, nil
+}
+
 // http://msdn.microsoft.com/en-us/library/ee780895.aspx
 func decodeDateInt(buf []byte) (days int) {
 	days = int(buf[0]) + int(buf[1])*256 + int(buf[2])*256*256
