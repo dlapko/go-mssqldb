@@ -494,16 +494,21 @@ func writeGuidType(w io.Writer, ti typeInfo, buf []byte, encoding msdsn.EncodePa
 		return
 	}
 	if ti.Size == 0x10 {
-		res := make([]byte, 0x10)
-		copy(res, buf)
-		if encoding.GuidConversion {
-			binary.BigEndian.PutUint32(res[0:4], binary.LittleEndian.Uint32(res[0:4]))
-			binary.BigEndian.PutUint16(res[4:6], binary.LittleEndian.Uint16(res[4:6]))
-			binary.BigEndian.PutUint16(res[6:8], binary.LittleEndian.Uint16(res[6:8]))
-		}
+		res := encodeGuid(buf, encoding)
 		_, err = w.Write(res)
 	}
 	return
+}
+
+func encodeGuid(buf []byte, encoding msdsn.EncodeParameters) []byte {
+	res := make([]byte, 0x10)
+	copy(res, buf)
+	if encoding.GuidConversion {
+		binary.BigEndian.PutUint32(res[0:4], binary.LittleEndian.Uint32(res[0:4]))
+		binary.BigEndian.PutUint16(res[4:6], binary.LittleEndian.Uint16(res[4:6]))
+		binary.BigEndian.PutUint16(res[6:8], binary.LittleEndian.Uint16(res[6:8]))
+	}
+	return res
 }
 
 func writeGuidTypeWithConversion(w io.Writer, ti typeInfo, buf []byte) (err error) {
