@@ -78,6 +78,7 @@ All connection string parameters are case-insensitive. Providing the same parame
   * `true` (Default) Client attempt to connect to all IPs simultaneously. 
   * `false` Client attempts to connect to IPs in serial.
 * `guid conversion` - Enables the conversion of GUIDs, so that byte order is preserved. UniqueIdentifier isn't supported for nullable fields, NullUniqueIdentifier must be used instead.
+* `raw sql_variant` - Indicates that sql_variant values should be returned in their raw TDS byte representation. Use this option when scanning into NullSQLVariant or SQLVariant types.
 
 ### Connection parameters for namedpipe package
 * `pipe`  - If set, no Browser query is made and named pipe used will be `\\<host>\pipe\<pipe>`

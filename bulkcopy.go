@@ -531,8 +531,8 @@ func (b *Bulk) makeParam(val DataValue, col columnStruct) (res param, err error)
 		}
 	case typeMoney, typeMoney4, typeMoneyN:
 		res.buffer, err = encodeMoney(val, col.ti.Size)
-			if err != nil {
-				return res, err
+		if err != nil {
+			return res, err
 		}
 	case typeDecimal, typeDecimalN, typeNumeric, typeNumericN:
 		buf, err := encodeDecimal(val, col.ti.Prec, col.ti.Scale)
@@ -559,6 +559,24 @@ func (b *Bulk) makeParam(val DataValue, col columnStruct) (res param, err error)
 			err = fmt.Errorf("mssql: invalid type for Guid column: %T %s", val, val)
 			return
 		}
+	case typeVariant:
+		var variant NullSQLVariant
+		switch v := val.(type) {
+		case SQLVariant:
+			variant.SQLVariant = v
+			variant.Valid = true
+		case NullSQLVariant:
+			variant = v
+		default:
+			return res, fmt.Errorf("mssql: invalid type for sql variant column: %T %v", val, val)
+		}
+
+		buf, err := variant.encode()
+		if err != nil {
+			return res, err
+		}
+		res.ti.Size = len(buf)
+		res.buffer = buf
 	default:
 		err = fmt.Errorf("mssql: type %x not implemented", col.ti.TypeId)
 	}
