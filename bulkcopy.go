@@ -6,7 +6,6 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
-	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -384,28 +383,9 @@ func (b *Bulk) makeParam(val DataValue, col columnStruct) (res param, err error)
 			return
 		}
 	case typeFlt4, typeFlt8, typeFltN:
-		var floatvalue float64
-
-		switch val := val.(type) {
-		case float32:
-			floatvalue = float64(val)
-		case float64:
-			floatvalue = val
-		case int:
-			floatvalue = float64(val)
-		case int64:
-			floatvalue = float64(val)
-		default:
-			err = fmt.Errorf("mssql: invalid type for float column: %T %s", val, val)
+		res.buffer, err = encodeFloatValue(val, res.ti.Size)
+		if err != nil {
 			return
-		}
-
-		if col.ti.Size == 4 {
-			res.buffer = make([]byte, 4)
-			binary.LittleEndian.PutUint32(res.buffer, math.Float32bits(float32(floatvalue)))
-		} else if col.ti.Size == 8 {
-			res.buffer = make([]byte, 8)
-			binary.LittleEndian.PutUint64(res.buffer, math.Float64bits(floatvalue))
 		}
 	case typeNVarChar, typeNText, typeNChar:
 

@@ -954,6 +954,33 @@ func encodeIntValue(value any, size int) ([]byte, error) {
 	return buf, nil
 }
 
+func encodeFloatValue(value any, size int) ([]byte, error) {
+	var n float64
+	switch v := value.(type) {
+	case float32:
+		n = float64(v)
+	case float64:
+		n = v
+	case int:
+		n = float64(v)
+	case int64:
+		n = float64(v)
+	default:
+		return nil, fmt.Errorf("mssql: invalid type for float column: %T", value)
+	}
+
+	buf := make([]byte, size)
+	switch size {
+	case 4:
+		binary.LittleEndian.PutUint32(buf, math.Float32bits(float32(n)))
+	case 8:
+		binary.LittleEndian.PutUint64(buf, math.Float64bits(n))
+	default:
+		return nil, fmt.Errorf("mssql: invalid float size: %d", size)
+	}
+	return buf, nil
+}
+
 func decodeMoney(buf []byte) []byte {
 	money := int64(uint64(buf[4]) |
 		uint64(buf[5])<<8 |
