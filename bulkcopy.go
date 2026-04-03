@@ -379,33 +379,9 @@ func (b *Bulk) makeParam(val DataValue, col columnStruct) (res param, err error)
 	switch col.ti.TypeId {
 
 	case typeInt1, typeInt2, typeInt4, typeInt8, typeIntN:
-		var intvalue int64
-
-		switch val := val.(type) {
-		case int:
-			intvalue = int64(val)
-		case int32:
-			intvalue = int64(val)
-		case int64:
-			intvalue = val
-		case float32:
-			intvalue = int64(val)
-		case float64:
-			intvalue = int64(val)
-		default:
-			err = fmt.Errorf("mssql: invalid type for int column: %T", val)
+		res.buffer, err = encodeIntValue(val, res.ti.Size)
+		if err != nil {
 			return
-		}
-
-		res.buffer = make([]byte, res.ti.Size)
-		if col.ti.Size == 1 {
-			res.buffer[0] = byte(intvalue)
-		} else if col.ti.Size == 2 {
-			binary.LittleEndian.PutUint16(res.buffer, uint16(intvalue))
-		} else if col.ti.Size == 4 {
-			binary.LittleEndian.PutUint32(res.buffer, uint32(intvalue))
-		} else if col.ti.Size == 8 {
-			binary.LittleEndian.PutUint64(res.buffer, uint64(intvalue))
 		}
 	case typeFlt4, typeFlt8, typeFltN:
 		var floatvalue float64
