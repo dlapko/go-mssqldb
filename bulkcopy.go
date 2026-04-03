@@ -6,13 +6,11 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
-	"math"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/microsoft/go-mssqldb/internal/decimal"
 	"github.com/microsoft/go-mssqldb/msdsn"
 	shopspring "github.com/shopspring/decimal"
 )
@@ -379,57 +377,14 @@ func (b *Bulk) makeParam(val DataValue, col columnStruct) (res param, err error)
 	switch col.ti.TypeId {
 
 	case typeInt1, typeInt2, typeInt4, typeInt8, typeIntN:
-		var intvalue int64
-
-		switch val := val.(type) {
-		case int:
-			intvalue = int64(val)
-		case int32:
-			intvalue = int64(val)
-		case int64:
-			intvalue = val
-		case float32:
-			intvalue = int64(val)
-		case float64:
-			intvalue = int64(val)
-		default:
-			err = fmt.Errorf("mssql: invalid type for int column: %T", val)
+		res.buffer, err = encodeIntValue(val, res.ti.Size)
+		if err != nil {
 			return
-		}
-
-		res.buffer = make([]byte, res.ti.Size)
-		if col.ti.Size == 1 {
-			res.buffer[0] = byte(intvalue)
-		} else if col.ti.Size == 2 {
-			binary.LittleEndian.PutUint16(res.buffer, uint16(intvalue))
-		} else if col.ti.Size == 4 {
-			binary.LittleEndian.PutUint32(res.buffer, uint32(intvalue))
-		} else if col.ti.Size == 8 {
-			binary.LittleEndian.PutUint64(res.buffer, uint64(intvalue))
 		}
 	case typeFlt4, typeFlt8, typeFltN:
-		var floatvalue float64
-
-		switch val := val.(type) {
-		case float32:
-			floatvalue = float64(val)
-		case float64:
-			floatvalue = val
-		case int:
-			floatvalue = float64(val)
-		case int64:
-			floatvalue = float64(val)
-		default:
-			err = fmt.Errorf("mssql: invalid type for float column: %T %s", val, val)
+		res.buffer, err = encodeFloatValue(val, res.ti.Size)
+		if err != nil {
 			return
-		}
-
-		if col.ti.Size == 4 {
-			res.buffer = make([]byte, 4)
-			binary.LittleEndian.PutUint32(res.buffer, math.Float32bits(float32(floatvalue)))
-		} else if col.ti.Size == 8 {
-			res.buffer = make([]byte, 8)
-			binary.LittleEndian.PutUint64(res.buffer, math.Float64bits(floatvalue))
 		}
 	case typeNVarChar, typeNText, typeNChar:
 
@@ -575,98 +530,16 @@ func (b *Bulk) makeParam(val DataValue, col columnStruct) (res param, err error)
 			return
 		}
 	case typeMoney, typeMoney4, typeMoneyN:
-		switch v := val.(type) {
-		case string:
-			money, err := decimal.StringToDecimalScale(v, 4)
-			if err != nil {
-				return res, err
-			}
-
-			buf := make([]byte, col.ti.Size)
-
-			integer0 := money.GetInteger(0)
-			if col.ti.Size == 4 {
-				if money.IsPositive() {
-					binary.LittleEndian.PutUint32(buf, integer0)
-				} else {
-					binary.LittleEndian.PutUint32(buf, ^integer0+1)
-				}
-			} else {
-				integer := (uint64(money.GetInteger(1)) << 32) | uint64(integer0)
-				if !money.IsPositive() {
-					integer = ^integer + 1
-				}
-
-				binary.LittleEndian.PutUint32(buf, uint32(integer>>32))
-				binary.LittleEndian.PutUint32(buf[4:], uint32(integer))
-			}
-
-			res.buffer = buf
-		default:
-			return res, fmt.Errorf("unknown value for money: %T %#v", v, v)
-		}
-	case typeDecimal, typeDecimalN, typeNumeric, typeNumericN:
-		prec := col.ti.Prec
-		scale := col.ti.Scale
-		var dec decimal.Decimal
-		switch v := val.(type) {
-		case int:
-			dec = decimal.Int64ToDecimalScale(int64(v), 0)
-		case int8:
-			dec = decimal.Int64ToDecimalScale(int64(v), 0)
-		case int16:
-			dec = decimal.Int64ToDecimalScale(int64(v), 0)
-		case int32:
-			dec = decimal.Int64ToDecimalScale(int64(v), 0)
-		case int64:
-			dec = decimal.Int64ToDecimalScale(int64(v), 0)
-		case float32:
-			dec, err = decimal.Float64ToDecimalScale(float64(v), scale)
-		case float64:
-			dec, err = decimal.Float64ToDecimalScale(float64(v), scale)
-		case string:
-			dec, err = decimal.StringToDecimalScale(v, scale)
-		default:
-			return res, fmt.Errorf("unknown value for decimal: %T %#v", v, v)
-		}
-
+		res.buffer, err = encodeMoney(val, col.ti.Size)
 		if err != nil {
 			return res, err
 		}
-		dec.SetPrec(prec)
-
-		var length byte
-		switch {
-		case prec <= 9:
-			length = 4
-		case prec <= 19:
-			length = 8
-		case prec <= 28:
-			length = 12
-		default:
-			length = 16
-		}
-
-		buf := make([]byte, length+1)
-		// first byte length written by typeInfo.writer
-		res.ti.Size = int(length) + 1
-		// second byte sign
-		if !dec.IsPositive() {
-			buf[0] = 0
-		} else {
-			buf[0] = 1
-		}
-
-		ub := dec.UnscaledBytes()
-		l := len(ub)
-		if l > int(length) {
-			err = fmt.Errorf("decimal out of range: %s", dec)
+	case typeDecimal, typeDecimalN, typeNumeric, typeNumericN:
+		buf, err := encodeDecimal(val, col.ti.Prec, col.ti.Scale)
+		if err != nil {
 			return res, err
 		}
-		// reverse the bytes
-		for i, j := 1, l-1; j >= 0; i, j = i+1, j-1 {
-			buf[i] = ub[j]
-		}
+		res.ti.Size = len(buf)
 		res.buffer = buf
 	case typeBigVarBin, typeBigBinary, typeImage:
 		switch val := val.(type) {
@@ -686,6 +559,24 @@ func (b *Bulk) makeParam(val DataValue, col columnStruct) (res param, err error)
 			err = fmt.Errorf("mssql: invalid type for Guid column: %T %s", val, val)
 			return
 		}
+	case typeVariant:
+		var variant NullSQLVariant
+		switch v := val.(type) {
+		case SQLVariant:
+			variant.SQLVariant = v
+			variant.Valid = true
+		case NullSQLVariant:
+			variant = v
+		default:
+			return res, fmt.Errorf("mssql: invalid type for sql variant column: %T %v", val, val)
+		}
+
+		buf, err := variant.encode()
+		if err != nil {
+			return res, err
+		}
+		res.ti.Size = len(buf)
+		res.buffer = buf
 	default:
 		err = fmt.Errorf("mssql: type %x not implemented", col.ti.TypeId)
 	}
