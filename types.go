@@ -998,6 +998,45 @@ func decodeMoney4(buf []byte) []byte {
 	return decimal.ScaleBytes(strconv.FormatInt(int64(money), 10), 4)
 }
 
+func encodeMoney(v any, size int) (buf []byte, err error) {
+	var m string
+	switch v := v.(type) {
+	case string:
+		m = v
+	case []byte:
+		m = string(v)
+	default:
+		return nil, fmt.Errorf("mssql: invalid type for money column: %T", v)
+	}
+
+	money, err := decimal.StringToDecimalScale(m, 4)
+	if err != nil {
+		return nil, err
+	}
+
+	buf = make([]byte, size)
+	integer0 := money.GetInteger(0)
+	switch size {
+	case 4:
+		if money.IsPositive() {
+			binary.LittleEndian.PutUint32(buf, integer0)
+		} else {
+			binary.LittleEndian.PutUint32(buf, ^integer0+1)
+		}
+	case 8:
+		integer := (uint64(money.GetInteger(1)) << 32) | uint64(integer0)
+		if !money.IsPositive() {
+			integer = ^integer + 1
+		}
+
+		binary.LittleEndian.PutUint32(buf, uint32(integer>>32))
+		binary.LittleEndian.PutUint32(buf[4:], uint32(integer))
+	default:
+		return nil, fmt.Errorf("mssql: invalid money size: %d", size)
+	}
+	return buf, nil
+}
+
 func decodeGuid(buf []byte, encoding msdsn.EncodeParameters) []byte {
 	res := make([]byte, 16)
 	copy(res, buf)
