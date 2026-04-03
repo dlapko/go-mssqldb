@@ -261,7 +261,12 @@ func writeVarLen(w io.Writer, ti *typeInfo, out bool, encoding msdsn.EncodeParam
 				return
 			}
 		}
-		ti.Writer = writeLongLenType
+
+		if ti.TypeId == typeVariant {
+			ti.Writer = writeVariantType
+		} else {
+			ti.Writer = writeLongLenType
+		}
 	default:
 		panic("Invalid type")
 	}
@@ -653,6 +658,13 @@ func readVariantTypeWithEncoding(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata, 
 	if size == 0 {
 		return nil
 	}
+
+	if encoding.RawSqlVariant {
+		buf := make([]byte, size)
+		r.ReadFull(buf)
+		return buf
+	}
+
 	vartype := r.byte()
 	propbytes := int32(r.byte())
 	switch vartype {
@@ -736,6 +748,21 @@ func readVariantTypeWithEncoding(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata, 
 		badStreamPanicf("Invalid variant typeid")
 	}
 	panic("shoulnd't get here")
+}
+
+// LONGLEN_TYPE, without textptr, timestamp
+// https://learn.microsoft.com/openspecs/windows_protocols/ms-tds/3f983fde-0509-485a-8c40-a9fa6679a828
+func writeVariantType(w io.Writer, ti typeInfo, buf []byte, encoding msdsn.EncodeParameters) (err error) {
+	if buf == nil {
+		err = binary.Write(w, binary.LittleEndian, uint32(0))
+		return
+	}
+	err = binary.Write(w, binary.LittleEndian, uint32(ti.Size))
+	if err != nil {
+		return
+	}
+	_, err = w.Write(buf)
+	return
 }
 
 // partially length prefixed stream
@@ -1518,6 +1545,8 @@ func makeDecl(ti typeInfo) string {
 			return fmt.Sprintf("%s.%s READONLY", ti.UdtInfo.SchemaName, ti.UdtInfo.TypeName)
 		}
 		return fmt.Sprintf("%s READONLY", ti.UdtInfo.TypeName)
+	case typeVariant:
+		return "sql_variant"
 	default:
 		panic(fmt.Sprintf("not implemented makeDecl for type %#x", ti.TypeId))
 	}

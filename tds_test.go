@@ -380,6 +380,12 @@ func makeConnStrSettingGuidConversion(t testing.TB, guidConversion bool) *url.UR
 	return config.URL()
 }
 
+func makeConnStrRawSqlVariant(t testing.TB) *url.URL {
+	config := testConnParams(t)
+	config.Encoding.RawSqlVariant = true
+	return config.URL()
+}
+
 // testContext creates a context with 30 second timeout and registers cleanup.
 // Use this for integration tests that need a context with timeout.
 func testContext(t testing.TB) context.Context {
