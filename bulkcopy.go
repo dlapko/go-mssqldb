@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/microsoft/go-mssqldb/internal/decimal"
 	"github.com/microsoft/go-mssqldb/msdsn"
 	shopspring "github.com/shopspring/decimal"
 )
@@ -531,35 +530,9 @@ func (b *Bulk) makeParam(val DataValue, col columnStruct) (res param, err error)
 			return
 		}
 	case typeMoney, typeMoney4, typeMoneyN:
-		switch v := val.(type) {
-		case string:
-			money, err := decimal.StringToDecimalScale(v, 4)
+		res.buffer, err = encodeMoney(val, col.ti.Size)
 			if err != nil {
 				return res, err
-			}
-
-			buf := make([]byte, col.ti.Size)
-
-			integer0 := money.GetInteger(0)
-			if col.ti.Size == 4 {
-				if money.IsPositive() {
-					binary.LittleEndian.PutUint32(buf, integer0)
-				} else {
-					binary.LittleEndian.PutUint32(buf, ^integer0+1)
-				}
-			} else {
-				integer := (uint64(money.GetInteger(1)) << 32) | uint64(integer0)
-				if !money.IsPositive() {
-					integer = ^integer + 1
-				}
-
-				binary.LittleEndian.PutUint32(buf, uint32(integer>>32))
-				binary.LittleEndian.PutUint32(buf[4:], uint32(integer))
-			}
-
-			res.buffer = buf
-		default:
-			return res, fmt.Errorf("unknown value for money: %T %#v", v, v)
 		}
 	case typeDecimal, typeDecimalN, typeNumeric, typeNumericN:
 		buf, err := encodeDecimal(val, col.ti.Prec, col.ti.Scale)
