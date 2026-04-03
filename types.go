@@ -907,6 +907,53 @@ func readVarLen(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata, encoding msdsn.En
 	}
 }
 
+func encodeIntValue(value any, size int) ([]byte, error) {
+	var n int64
+	switch v := value.(type) {
+	case int:
+		n = int64(v)
+	case int8:
+		n = int64(v)
+	case int16:
+		n = int64(v)
+	case int32:
+		n = int64(v)
+	case int64:
+		n = v
+	case uint:
+		n = int64(v)
+	case uint8:
+		n = int64(v)
+	case uint16:
+		n = int64(v)
+	case uint32:
+		n = int64(v)
+	case uint64:
+		n = int64(v)
+	case float32:
+		n = int64(v)
+	case float64:
+		n = int64(v)
+	default:
+		return nil, fmt.Errorf("mssql: invalid type for int column: %T", value)
+	}
+
+	buf := make([]byte, size)
+	switch size {
+	case 1:
+		buf[0] = byte(n)
+	case 2:
+		binary.LittleEndian.PutUint16(buf, uint16(n))
+	case 4:
+		binary.LittleEndian.PutUint32(buf, uint32(n))
+	case 8:
+		binary.LittleEndian.PutUint64(buf, uint64(n))
+	default:
+		return nil, fmt.Errorf("mssql: invalid int size: %d", size)
+	}
+	return buf, nil
+}
+
 func decodeMoney(buf []byte) []byte {
 	money := int64(uint64(buf[4]) |
 		uint64(buf[5])<<8 |
